@@ -1,0 +1,17 @@
+Nigeria ADM1 boundary subset (37 states)
+
+Source: geoBoundaries, gbOpen release 5.0.0, commit
+9469f09592ced973a3448cf66b6100b741b64c0d.
+Source data: GRID3 Nigeria State Boundaries.
+Boundary layer represented year: 2022.
+License: Creative Commons Attribution 4.0 International (CC BY 4.0).
+
+Source metadata: https://www.geoboundaries.org/api/current/gbOpen/NGA/ADM1/
+Pinned source: https://github.com/wmgeolab/geoBoundaries/tree/9469f09592ced973a3448cf66b6100b741b64c0d/releaseData/gbOpen/NGA/ADM1/
+
+Global boundary support
+
+The resolver dynamically indexes and downloads geoBoundaries gbOpen datasets for ADM0-ADM5 when those datasets exist for a country. Downloaded files are cached locally under GEOBOUNDARIES_CACHE_DIR or fires/data/boundaries/cache by default. Country coverage and available administrative levels are determined by the live/versioned geoBoundaries release index. Source attribution and licence metadata are included in resolved region responses.
+
+Global API: https://www.geoboundaries.org/api/current/gbOpen/
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
