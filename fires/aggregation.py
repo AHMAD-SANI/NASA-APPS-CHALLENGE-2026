@@ -240,8 +240,9 @@ def _scoped_statistics(start, end, products, scope_type, scope_identifier, perio
     #  * global/world: live rows, plus non-live rows linked to a global job;
     #  * region/bbox: rows linked to a job with that exact scope;
     #  * unknown: non-live rows not linked to any job coverage.
-    # "+fd.retrieved_at" keeps SQLite on the product/date covering index
-    # instead of the low-selectivity retrieved_at index.
+    # SQLite's unary + prevents it from choosing the low-selectivity
+    # retrieved_at index. PostgreSQL does not accept unary + on timestamps.
+    retrieved_at_column = '+fd.retrieved_at' if connection.vendor == 'sqlite' else 'fd.retrieved_at'
     linked_to_scope = f'''EXISTS (
                 SELECT 1 FROM {hd} hd
                 JOIN {cl} cl ON cl.historical_job_id = hd.job_id
@@ -258,10 +259,10 @@ def _scoped_statistics(start, end, products, scope_type, scope_identifier, perio
                 WHERE hd.detection_id = fd.id
             )'''
     if scope_type == 'global' and scope_identifier == 'world':
-        condition = f'(+fd.retrieved_at IS NOT NULL OR {linked_to_scope})'
+        condition = f'({retrieved_at_column} IS NOT NULL OR {linked_to_scope})'
         condition_params = (scope_type, scope_identifier)
     elif scope_type == 'unknown' and scope_identifier == 'observations-only':
-        condition = f'+fd.retrieved_at IS NULL AND NOT {linked_to_any}'
+        condition = f'{retrieved_at_column} IS NULL AND NOT {linked_to_any}'
         condition_params = ()
     else:
         condition = linked_to_scope
@@ -275,7 +276,7 @@ def _scoped_statistics(start, end, products, scope_type, scope_identifier, perio
         # Rows linked to a job for this exact area were scoped by that job.
         condition = (
             f'({linked_to_scope} OR (fd.latitude BETWEEN %s AND %s AND fd.longitude BETWEEN %s AND %s '
-            f'AND (+fd.retrieved_at IS NOT NULL OR {linked_to_scope})))'
+            f'AND ({retrieved_at_column} IS NOT NULL OR {linked_to_scope})))'
         )
         condition_params = (
             scope_type, scope_identifier,

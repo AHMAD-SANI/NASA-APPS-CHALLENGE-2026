@@ -221,6 +221,37 @@ class FireScopeAPITests(APITestCase):
             attempt_key=key, historical_job=job,
         )
 
+    def test_scoped_statistics_sql_is_postgresql_safe_for_each_scope_branch(self):
+        from fires.aggregation import _scoped_statistics
+
+        day = date(2026, 9, 1)
+        branches = [
+            ('global', 'world', None),
+            ('unknown', 'observations-only', None),
+            ('country', 'NGA', None),
+            ('region', 'NGA:state:NG-KN:Kano', None),
+            ('region', 'NGA:state:NG-KN:Kano', {
+                'south': 0, 'west': 0, 'north': 10, 'east': 10,
+            }),
+        ]
+        for scope_type, scope_identifier, area in branches:
+            with self.subTest(scope=scope_type, area=area is not None):
+                cursor = Mock()
+                cursor.__enter__ = Mock(return_value=cursor)
+                cursor.__exit__ = Mock(return_value=False)
+                cursor.fetchmany.return_value = []
+                with patch('fires.aggregation.connection.vendor', 'postgresql'), \
+                        patch('fires.aggregation.connection.cursor', return_value=cursor), \
+                        patch('fires.aggregation._scope_area', return_value=(area, None) if area else None):
+                    _scoped_statistics(day, day, ['MODIS_NRT'], scope_type, scope_identifier)
+
+                sql = cursor.execute.call_args.args[0]
+                self.assertNotIn('+fd.retrieved_at', sql)
+                if scope_type in {'global', 'unknown'} or area:
+                    self.assertIn('fd.retrieved_at IS', sql)
+                else:
+                    self.assertIn('cl.scope_type = %s AND cl.scope_identifier = %s', sql)
+
     @override_settings(DEBUG=True)
     def test_daily_aggregation_keeps_all_eight_products_distinct(self):
         day = date(2026, 9, 1)
@@ -242,6 +273,28 @@ class FireScopeAPITests(APITestCase):
         })
         self.assertEqual(by_sensor.data['count'], 2)
         self.assertEqual({row['source_product'] for row in by_sensor.data['results']}, {'MODIS_NRT', 'MODIS_SP'})
+
+    def test_daily_and_monthly_aggregation_filter_product_and_include_end_date(self):
+        first, end, after_end = date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)
+        self._aggregate_detection('MODIS_NRT', first, 'range-product-first')
+        self._aggregate_detection('MODIS_NRT', end, 'range-product-end')
+        self._aggregate_detection('MODIS_NRT', after_end, 'range-product-after-end')
+        self._aggregate_detection('MODIS_SP', end, 'range-other-product-end')
+        params = {
+            'source_product': 'MODIS_NRT', 'start_date': first.isoformat(),
+            'end_date': end.isoformat(), 'page_size': 100,
+        }
+
+        daily = self.client.get(reverse('daily_aggregation'), params)
+        self.assertEqual(daily.status_code, 200)
+        self.assertEqual(daily.data['count'], 2)
+        self.assertEqual([row['detection_count'] for row in daily.data['results']], [1, 1])
+        self.assertEqual(daily.data['results'][-1]['acquisition_date'], end.isoformat())
+
+        monthly = self.client.get(reverse('monthly_aggregation'), params)
+        self.assertEqual(monthly.status_code, 200)
+        self.assertEqual(monthly.data['count'], 1)
+        self.assertEqual(monthly.data['results'][0]['total_detections'], 2)
 
     def test_region_daily_and_monthly_aggregation_preserves_coverage_states(self):
         first = date(2026, 9, 20)
